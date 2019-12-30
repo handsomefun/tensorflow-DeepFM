@@ -85,13 +85,13 @@ class DeepFM(BaseEstimator, TransformerMixin):
             self.embeddings = tf.multiply(self.embeddings, feat_value)
 
             # ---------- first order term ----------
-            # weights['feature_bias']包含w?
+            # weights['feature_bias']这里其实就是w，真正的bias:w0这里并没有
             self.y_first_order = tf.nn.embedding_lookup(self.weights["feature_bias"], self.feat_index) # None * F * 1
             self.y_first_order = tf.reduce_sum(tf.multiply(self.y_first_order, feat_value), 2)  # None * F
             self.y_first_order = tf.nn.dropout(self.y_first_order, self.dropout_keep_fm[0]) # None * F
 
             # ---------- second order term ---------------
-            # 为什么只看到<v_i, v_j> 没有x_i, x_j?
+            # v_i已经把x_i吸收进去了，所以这里feature_value没有显示的出现
             # sum_square part
             self.summed_features_emb = tf.reduce_sum(self.embeddings, 1)  # None * K
             self.summed_features_emb_square = tf.square(self.summed_features_emb)  # None * K
@@ -105,8 +105,10 @@ class DeepFM(BaseEstimator, TransformerMixin):
             self.y_second_order = tf.nn.dropout(self.y_second_order, self.dropout_keep_fm[1])  # None * K
 
             # ---------- Deep component ----------
+            #[field_size, embedding_size]的输入做flatten
             self.y_deep = tf.reshape(self.embeddings, shape=[-1, self.field_size * self.embedding_size]) # None * (F*K)
             self.y_deep = tf.nn.dropout(self.y_deep, self.dropout_keep_deep[0])
+            #下面就是正常的MLP
             for i in range(0, len(self.deep_layers)):
                 self.y_deep = tf.add(tf.matmul(self.y_deep, self.weights["layer_%d" %i]), self.weights["bias_%d"%i]) # None * layer[i] * 1
                 if self.batch_norm:
