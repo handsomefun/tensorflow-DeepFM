@@ -66,7 +66,7 @@ class DeepFM(BaseEstimator, TransformerMixin):
         with self.graph.as_default():
 
             tf.set_random_seed(self.random_seed)
-
+            #稀疏存储，取值范围是[0, feature_size]，但是取值数目是field_size，即每个field只有一个值；多值离散型field怎么处理呢？
             self.feat_index = tf.placeholder(tf.int32, shape=[None, None],
                                                  name="feat_index")  # None * F
             self.feat_value = tf.placeholder(tf.float32, shape=[None, None],
@@ -78,18 +78,20 @@ class DeepFM(BaseEstimator, TransformerMixin):
 
             self.weights = self._initialize_weights()
 
-            # model
+            # 从feature_size * embedding_size的参数中查到对应的field_size个embedding向量，结合embedding * feat_value操作相当于MLP的第一层
             self.embeddings = tf.nn.embedding_lookup(self.weights["feature_embeddings"],
                                                              self.feat_index)  # None * F * K
             feat_value = tf.reshape(self.feat_value, shape=[-1, self.field_size, 1])
             self.embeddings = tf.multiply(self.embeddings, feat_value)
 
             # ---------- first order term ----------
+            # weights['feature_bias']包含w?
             self.y_first_order = tf.nn.embedding_lookup(self.weights["feature_bias"], self.feat_index) # None * F * 1
             self.y_first_order = tf.reduce_sum(tf.multiply(self.y_first_order, feat_value), 2)  # None * F
             self.y_first_order = tf.nn.dropout(self.y_first_order, self.dropout_keep_fm[0]) # None * F
 
             # ---------- second order term ---------------
+            # 为什么只看到<v_i, v_j> 没有x_i, x_j?
             # sum_square part
             self.summed_features_emb = tf.reduce_sum(self.embeddings, 1)  # None * K
             self.summed_features_emb_square = tf.square(self.summed_features_emb)  # None * K
@@ -187,9 +189,10 @@ class DeepFM(BaseEstimator, TransformerMixin):
             tf.random_uniform([self.feature_size, 1], 0.0, 1.0), name="feature_bias")  # feature_size * 1
 
         # deep layers
-        num_layer = len(self.deep_layers)
-        input_size = self.field_size * self.embedding_size
+        num_layer = len(self.deep_layers) 
+        input_size = self.field_size * self.embedding_size 
         glorot = np.sqrt(2.0 / (input_size + self.deep_layers[0]))
+        ##input --> deep_layer0
         weights["layer_0"] = tf.Variable(
             np.random.normal(loc=0, scale=glorot, size=(input_size, self.deep_layers[0])), dtype=np.float32)
         weights["bias_0"] = tf.Variable(np.random.normal(loc=0, scale=glorot, size=(1, self.deep_layers[0])),
@@ -206,7 +209,7 @@ class DeepFM(BaseEstimator, TransformerMixin):
         # final concat projection layer
         if self.use_fm and self.use_deep:
             input_size = self.field_size + self.embedding_size + self.deep_layers[-1]
-        elif self.use_fm:
+        elif self.use_fm: ##干嘛要embedding size
             input_size = self.field_size + self.embedding_size
         elif self.use_deep:
             input_size = self.deep_layers[-1]
